@@ -1,0 +1,7 @@
+env/
+__pycache__/
+checkpoints/
+*.csv
+test_*.py
+test_*.txt
+.vscode/
