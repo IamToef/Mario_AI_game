@@ -6,8 +6,8 @@ Module DQN Agent (MarioDQN) cho dự án Mario DQN.
 import copy
 import os
 from typing import Any
-from memory import ReplayMemory
-from model import MarioNet
+from src.memory import ReplayMemory
+from src.model import MarioNet
 import numpy as np
 import torch
 from torch import nn

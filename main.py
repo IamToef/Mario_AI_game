@@ -9,8 +9,8 @@ import sys
 import time
 
 sys.stdout.reconfigure(encoding="utf-8")
-from agent import MarioDQN
-from wrappers import create_mario_env
+from src.agent import MarioDQN
+from src.wrappers import create_mario_env
 
 
 def train() -> None:
