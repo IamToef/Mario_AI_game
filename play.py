@@ -25,7 +25,7 @@ def play() -> None:
     # Khởi tạo Agent
     state_dim = (4, 84, 84)
     action_dim = env.action_space.n
-    agent = MarioDQN(state_dim, action_dim, save_dir="checkpoints")
+    agent = MarioDQN(state_dim, action_dim, save_dir="checkpoints", model_type="dueling")
 
     # Tải trọng số tốt nhất (nếu có) hoặc trọng số mới nhất
     if agent.load_checkpoint("mario_dqn_best.pt"):
@@ -56,6 +56,9 @@ def play() -> None:
             state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             total_reward += float(reward)
+
+            # Cập nhật hiển thị màn hình game
+            env.render()
 
             # Ngủ 0.02s để tốc độ hiển thị vừa mắt người xem
             time.sleep(0.02)

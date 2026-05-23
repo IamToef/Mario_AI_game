@@ -139,17 +139,16 @@ def create_mario_env(
         render_mode (str | None): Chế độ hiển thị ('human' hoặc None). Mặc định None.
 
     Returns:
-        gym.Env: Môi trường Mario đã được wrap đầy đủ.
+        gym.Env: Môi trường Mario đã được wrap đầy đủ bằng gymnasium.
     """
-    env_name = f"SuperMarioBros-{world}-{stage}-v0"
+    from gym_super_mario_bros.smb_env import SuperMarioBrosEnv
+    
+    # Khởi tạo trực tiếp thay vì qua gym.make() để tránh bị gym bọc thêm wrapper cũ
+    env = SuperMarioBrosEnv(rom_mode='vanilla', lost_levels=False, target=(world, stage))
     if render_mode:
-        env = gym_super_mario_bros.make(
-            env_name, render_mode=render_mode, disable_env_checker=True
-        )
-    else:
-        env = gym_super_mario_bros.make(env_name, disable_env_checker=True)
+        env.render_mode = render_mode
 
-    # 1. Giới hạn nút bấm (JoypadSpace)
+    # 1. Giới hạn nút bấm (JoypadSpace - thuộc nes_py dùng gymnasium)
     env = JoypadSpace(env, actions)
     # 2. Bỏ qua frame (SkipFrame)
     env = SkipFrame(env, skip=4)

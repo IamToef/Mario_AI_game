@@ -7,7 +7,7 @@ import copy
 import os
 from typing import Any
 from src.memory import ReplayMemory
-from src.model import MarioNet
+from src.model import MarioNet, MarioDuelingNet
 import numpy as np
 import torch
 from torch import nn
@@ -23,6 +23,7 @@ class MarioDQN:
         state_dim: tuple[int, int, int],
         action_dim: int,
         save_dir: str = "checkpoints",
+        model_type: str = "dueling",
     ) -> None:
         """
         Khởi tạo MarioDQN Agent.
@@ -31,36 +32,40 @@ class MarioDQN:
             state_dim (tuple): Kích thước state đầu vào (channels, height, width).
             action_dim (int): Số lượng hành động đầu ra.
             save_dir (str): Thư mục lưu trữ trọng số (checkpoints).
+            model_type (str): Kiểu mô hình mạng nơ-ron sử dụng ('vanilla' hoặc 'dueling').
         """
         self.state_dim = state_dim
         self.action_dim = action_dim
-        self.save_dir = save_dir
+        self.model_type = model_type
+        # Tự động phân tách thư mục checkpoints theo loại mô hình đang sử dụng
+        self.save_dir = os.path.join(save_dir, self.model_type)
         os.makedirs(self.save_dir, exist_ok=True)
 
-        # Ưu tiên sử dụng CPU theo cấu hình máy
-        self.device = torch.device("cpu")
+        # Ưu tiên sử dụng GPU (CUDA) nếu có, nếu không thì dùng CPU
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Khởi tạo Mạng Online và Mạng Target
-        self.online_net = MarioNet(self.state_dim, self.action_dim).to(
-            self.device
-        )
+        # Khởi tạo Mạng Online và Mạng Target dựa trên model_type
+        if self.model_type == "vanilla":
+            self.online_net = MarioNet(self.state_dim, self.action_dim).to(self.device)
+        else:
+            self.online_net = MarioDuelingNet(self.state_dim, self.action_dim).to(self.device)
+
         self.target_net = copy.deepcopy(self.online_net)
         self.target_net.eval()  # Mạng Target chỉ dùng để tính toán, không cập nhật gradient
 
         # Bộ nhớ kinh nghiệm (Replay Buffer)
-        self.memory = ReplayMemory(capacity=30000)
+        self.memory = ReplayMemory(capacity=100000)
 
         # Các siêu tham số (Hyperparameters) của DQN
-        self.gamma: float = 0.90  # Hệ số chiết khấu (Discount factor)
+        self.gamma: float = 0.99  # Hệ số chiết khấu (Discount factor) - tăng từ 0.90 để học dài hạn
         self.epsilon: float = 1.0  # Tỷ lệ khám phá ngẫu nhiên ban đầu
         self.epsilon_min: float = 0.05  # Tỷ lệ khám phá ngẫu nhiên tối thiểu
-        self.epsilon_decay: float = 0.999999  # Tốc độ giảm epsilon qua từng step
+        self.epsilon_decay: float = 0.9999962  # Tốc độ giảm epsilon qua từng step
 
-        self.batch_size: int = 32
-        self.sync_rate: int = (
-            10000  # Số steps để đồng bộ mạng Online sang Target
-        )
+        self.batch_size: int = 64  # Tăng batch size từ 32 lên 64 giúp gradient ổn định hơn
+        self.sync_rate: int = 10000  # Số steps để đồng bộ mạng Online sang Target
         self.curr_step: int = 0  # Đếm tổng số bước đã thực hiện
+        self.last_sync: int = 0  # Lần đồng bộ gần nhất
 
         # Bộ tối ưu và Hàm mất mát
         self.optimizer = torch.optim.Adam(
@@ -68,33 +73,46 @@ class MarioDQN:
         )
         self.loss_fn = nn.SmoothL1Loss()
 
-    def act(self, state: np.ndarray) -> int:
+    def act(self, state: np.ndarray) -> np.ndarray | int:
         """
-        Chọn hành động dựa theo chính sách Epsilon-Greedy.
+        Chọn hành động dựa theo chính sách Epsilon-Greedy. Hỗ trợ cả 1 state (play.py) và batch states (main.py).
 
         Parameters:
-            state (np.ndarray): Trạng thái hiện tại (4, 84, 84).
+            state (np.ndarray): Trạng thái hiện tại. Có thể là 3D (4, 84, 84) hoặc 4D (num_envs, 4, 84, 84).
 
         Returns:
-            int: Hành động được chọn.
+            np.ndarray | int: Hành động được chọn.
         """
+        is_single = state.ndim == 3
+        if is_single:
+            state = np.expand_dims(state, axis=0)
+
+        num_envs = state.shape[0]
+
         # Khám phá ngẫu nhiên (Exploration)
-        if np.random.rand() < self.epsilon:
-            action = np.random.randint(self.action_dim)
-        else:
-            # Khai thác tri thức (Exploitation)
-            state_tensor = (
-                torch.tensor(state, dtype=torch.float32, device=self.device)
-                .unsqueeze(0)
+        explore_mask = np.random.rand(num_envs) < self.epsilon
+        rand_actions = np.random.randint(self.action_dim, size=num_envs)
+
+        # Khai thác tri thức (Exploitation)
+        if not np.all(explore_mask):
+            state_tensor = torch.tensor(
+                state, dtype=torch.float32, device=self.device
             )
             with torch.no_grad():
                 q_values = self.online_net(state_tensor)
-                action = int(torch.argmax(q_values, dim=1).item())
+                model_actions = torch.argmax(q_values, dim=1).cpu().numpy()
+        else:
+            model_actions = rand_actions
 
-        # Giảm dần epsilon
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
-        self.curr_step += 1
-        return action
+        # Trộn ngẫu nhiên và mô hình
+        actions = np.where(explore_mask, rand_actions, model_actions)
+
+        # Giảm dần epsilon và tăng step
+        for _ in range(num_envs):
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        self.curr_step += num_envs
+        
+        return int(actions[0]) if is_single else actions
 
     def cache(
         self,
@@ -120,9 +138,10 @@ class MarioDQN:
         if len(self.memory) < self.batch_size:
             return None
 
-        # Đồng bộ Mạng Online sang Target định kỳ
-        if self.curr_step % self.sync_rate == 0:
+        # Đồng bộ Mạng Online sang Target định kỳ an toàn (vì curr_step nhảy theo num_envs)
+        if self.curr_step - self.last_sync >= self.sync_rate:
             self.target_net.load_state_dict(self.online_net.state_dict())
+            self.last_sync = self.curr_step
 
         # Lấy mẫu mini-batch
         states, actions, rewards, next_states, dones = self.memory.sample(
@@ -132,9 +151,12 @@ class MarioDQN:
         # Tính Q-values hiện tại: Q_online(s, a)
         curr_q = self.online_net(states).gather(1, actions)
 
-        # Tính Q-values mục tiêu: r + gamma * max(Q_target(s', a')) * (1 - done)
+        # Tính Q-values mục tiêu bằng Double DQN (DDQN)
         with torch.no_grad():
-            next_q = self.target_net(next_states).max(dim=1, keepdim=True)[0]
+            # Chọn hành động tốt nhất ở trạng thái tiếp theo bằng mạng Online
+            best_next_actions = self.online_net(next_states).argmax(dim=1, keepdim=True)
+            # Lấy giá trị Q-value của hành động đó từ mạng Target
+            next_q = self.target_net(next_states).gather(1, best_next_actions)
             target_q = rewards + self.gamma * next_q * (1.0 - dones)
 
         # Tính toán Loss và cập nhật gradient
@@ -165,17 +187,23 @@ class MarioDQN:
         Tải lại trọng số mạng Online và các trạng thái học tập từ file checkpoint.
 
         Returns:
-            bool: True nếu tải thành công, False nếu không tìm thấy file.
+            bool: True nếu tải thành công, False nếu không tìm thấy file hoặc lỗi kiến trúc.
         """
         save_path = os.path.join(self.save_dir, filename)
         if not os.path.exists(save_path):
             return False
 
-        checkpoint = torch.load(save_path, map_location=self.device)
-        self.curr_step = checkpoint.get("curr_step", 0)
-        self.epsilon = checkpoint.get("epsilon", self.epsilon_min)
-        self.online_net.load_state_dict(checkpoint["model_state_dict"])
-        self.target_net = copy.deepcopy(self.online_net)
-        self.target_net.eval()
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        return True
+        try:
+            checkpoint = torch.load(save_path, map_location=self.device)
+            self.online_net.load_state_dict(checkpoint["model_state_dict"])
+            self.target_net = copy.deepcopy(self.online_net)
+            self.target_net.eval()
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            self.curr_step = checkpoint.get("curr_step", 0)
+            self.epsilon = checkpoint.get("epsilon", self.epsilon_min)
+            return True
+        except Exception as e:
+            print(f"[!] Cảnh báo: Không thể tải checkpoint {filename} do lỗi hoặc không khớp kiến trúc mô hình.")
+            print(f"    Chi tiết lỗi: {e}")
+            print("[*] Agent sẽ khởi động với mô hình mới hoàn toàn.")
+            return False

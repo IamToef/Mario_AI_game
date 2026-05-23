@@ -1,0 +1,47 @@
+HƯỚNG DẪN BẬT - TẮT MÔI TRƯỜNG ẢO (VIRTUAL ENVIRONMENT)
+======================================================
+
+Môi trường ảo của dự án được lưu trong thư mục: `.venv` (lưu ý có dấu chấm "." ở đầu).
+
+1. CÁCH BẬT (ACTIVATE) MÔI TRƯỜNG ẢO
+-----------------------------------
+
+Tùy vào terminal bạn đang dùng trong VS Code/Command Prompt, hãy chạy lệnh tương ứng:
+
+A. Dành cho PowerShell (mặc định của bạn):
+   Do hệ thống của bạn đang chặn chạy script (lỗi UnauthorizedAccess), bạn cần chạy lệnh này trước để cho phép chạy script trong phiên làm việc hiện tại:
+   
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+
+   Sau đó, bật môi trường ảo bằng lệnh:
+   
+   .\.venv\Scripts\Activate.ps1
+
+B. Dành cho Command Prompt (cmd):
+   Run lệnh:
+   
+   .\.venv\Scripts\activate.bat
+
+C. Dành cho Git Bash:
+   Run lệnh:
+   
+   source .venv/Scripts/activate
+
+
+* Dấu hiệu nhận biết đã bật thành công: Bạn sẽ thấy chữ (.venv) xuất hiện ở đầu dòng lệnh trong terminal.
+
+
+2. CÁCH TẮT (DEACTIVATE) MÔI TRƯỜNG ẢO
+-------------------------------------
+
+Khi bạn muốn thoát khỏi môi trường ảo, chỉ cần gõ lệnh sau ở bất kỳ terminal nào:
+
+deactivate
+
+
+3. CÁCH TỰ CÀI ĐẶT THƯ VIỆN
+---------------------------
+
+Sau khi đã bật môi trường ảo thành công (có chữ (.venv) ở đầu dòng lệnh), chạy lệnh sau để tự cài đặt các thư viện trong requirements.txt:
+
+pip install -r requirements.txt

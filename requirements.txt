@@ -4,5 +4,7 @@ gym-super-mario-bros==7.4.0
 
 # Thuật toán di truyền và tính toán
 neat-python==0.92
-numpy==1.26.4
-opencv-python==4.9.0.80  # Dùng để xử lý, thu nhỏ ảnh màn hình game cho AI dễ học
+numpy>=2.1.0
+opencv-python>=4.10.0  # Dùng để xử lý, thu nhỏ ảnh màn hình game cho AI dễ học
+torch
+gym>=0.21.0

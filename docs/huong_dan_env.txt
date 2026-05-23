@@ -11,7 +11,7 @@ Mở terminal PowerShell tại thư mục dự án.
     conda deactivate
 
 - Sau đó kích hoạt môi trường ảo (env) ban đầu của bạn:
-    .\env\Scripts\Activate.ps1
+    .\.venv\Scripts\Activate.ps1  
 
   *(Nếu báo lỗi Execution Policy, chạy lệnh: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process rồi kích hoạt lại).*
 
